@@ -15,7 +15,6 @@ interface ActiveFile {
   processed_at: string;
 }
 
-// Memory structure to hold multiple conversations
 interface ConversationState {
   messages: Message[];
   conversationId: string;
@@ -32,6 +31,7 @@ interface UseChatReturn {
   uploadPDF: (url: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   setActiveFileById: (id: number) => void;
+  deleteFile: (id: number) => Promise<void>;
   resetChat: () => void;
 }
 
@@ -43,8 +43,6 @@ export function useChat(): UseChatReturn {
   const [activeFile, setActiveFile] = useState<ActiveFile | null>(null);
   const [files, setFiles] = useState<ActiveFile[]>([]);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
-  
-  // This map stores the state for each document: { [docId]: { messages, conversationId } }
   const [conversations, setConversations] = useState<Record<number, ConversationState>>({});
   const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
 
@@ -63,7 +61,6 @@ export function useChat(): UseChatReturn {
     return data;
   };
 
-  // 1. Initial Fetch & Realtime Subscription
   useEffect(() => {
     fetchFiles().then(data => {
       if (data && data.length > 0 && !activeFile) {
@@ -77,16 +74,8 @@ export function useChat(): UseChatReturn {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'active_session_files' },
-        (payload) => {
+        () => {
           fetchFiles();
-          if (payload.eventType === 'DELETE') {
-            const deletedId = (payload.old as any).id;
-            if (activeFile?.id === deletedId) {
-              setActiveFile(null);
-              setPdfStatus('idle');
-              setMessages([]);
-            }
-          }
         }
       )
       .subscribe();
@@ -94,17 +83,13 @@ export function useChat(): UseChatReturn {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeFile?.id]);
+  }, []);
 
-  // Update effect to save current chat state into the conversations map whenever messages change
   useEffect(() => {
     if (activeFile) {
       setConversations(prev => ({
         ...prev,
-        [activeFile.id]: {
-          messages,
-          conversationId
-        }
+        [activeFile.id]: { messages, conversationId }
       }));
     }
   }, [messages, conversationId, activeFile?.id]);
@@ -151,17 +136,14 @@ export function useChat(): UseChatReturn {
         if (freshFiles && freshFiles.length > 0) {
           const latestFile = freshFiles[0];
           setActiveFile(latestFile);
-          // Initialize memory for this new file
           setConversations(prev => ({
             ...prev,
             [latestFile.id]: { messages: [], conversationId: newConvId }
           }));
         }
-        
         if (data.suggestions && Array.isArray(data.suggestions)) {
           setSuggestedQuestions(data.suggestions);
         }
-        
         setPdfStatus('ready');
       } else {
         throw new Error('Processing failed');
@@ -220,8 +202,6 @@ export function useChat(): UseChatReturn {
     if (file) {
       setActiveFile(file);
       setPdfStatus('ready');
-      
-      // RESTORE or INITIALIZE state for this specific file
       const savedState = conversations[id];
       if (savedState) {
         setMessages(savedState.messages);
@@ -230,6 +210,49 @@ export function useChat(): UseChatReturn {
         setMessages([]);
         setConversationId(crypto.randomUUID());
       }
+    }
+  };
+
+  const deleteFile = async (id: number) => {
+    const fileToDelete = files.find(f => f.id === id);
+    if (!fileToDelete) return;
+
+    try {
+      // 1. Delete from library table
+      const { error: libError } = await supabase
+        .from('active_session_files')
+        .delete()
+        .eq('id', id);
+
+      if (libError) throw libError;
+
+      // 2. Clear memory for this file
+      setConversations(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+
+      // 3. Clear active file if it was the one deleted
+      if (activeFile?.id === id) {
+        setActiveFile(null);
+        setMessages([]);
+        setPdfStatus('idle');
+      }
+
+      // 4. Important: Attempt to clean up vectors in documents_pg
+      // This assumes the user has permissions to delete from this table
+      await supabase
+        .from('documents_pg')
+        .delete()
+        .filter('metadata->>archivo', 'eq', fileToDelete.filename);
+
+      // 5. Refresh local list
+      await fetchFiles();
+
+    } catch (error) {
+      console.error('Delete Error:', error);
+      alert('Error al eliminar el documento. Verifica los permisos de la base de datos.');
     }
   };
 
@@ -256,6 +279,7 @@ export function useChat(): UseChatReturn {
     uploadPDF,
     sendMessage,
     setActiveFileById,
+    deleteFile,
     resetChat
   };
 }

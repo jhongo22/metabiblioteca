@@ -13,7 +13,7 @@ import { Menu, X } from 'lucide-react';
 export default function Home() {
   const { 
     messages, pdfStatus, loadingStep, isThinking, uploadPDF, sendMessage, 
-    activeFile, files, setActiveFileById, resetChat, suggestedQuestions 
+    activeFile, files, setActiveFileById, deleteFile, resetChat, suggestedQuestions 
   } = useChat();
   const [activeTab, setActiveTab] = useState<'upload' | 'chat'>('upload');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -58,6 +58,7 @@ export default function Home() {
         activeFile={activeFile}
         files={files}
         onSelectFile={setActiveFileById}
+        onDeleteFile={deleteFile}
       />
 
       {/* Mobile Overlay */}
