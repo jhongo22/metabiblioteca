@@ -13,9 +13,10 @@ interface ChatInterfaceProps {
   onResetChat: () => void;
   isThinking: boolean;
   disabled: boolean;
+  suggestions?: string[];
 }
 
-export function ChatInterface({ messages, onSendMessage, onResetChat, isThinking, disabled }: ChatInterfaceProps) {
+export function ChatInterface({ messages, onSendMessage, onResetChat, isThinking, disabled, suggestions = [] }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -36,14 +37,22 @@ export function ChatInterface({ messages, onSendMessage, onResetChat, isThinking
 
   if (disabled && messages.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50 gap-4">
-        <Bot className="w-16 h-16 opacity-20" />
-        <p className="text-lg font-light">Sube un PDF para activar el agente</p>
+      <div className="flex flex-col items-center justify-center h-full text-zinc-500 gap-6 bg-[#09090b]/40">
+        <div className="relative">
+          <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full" />
+          <div className="relative w-24 h-24 bg-white/[0.02] border border-white/5 rounded-[2.5rem] flex items-center justify-center shadow-2xl">
+            <Bot className="w-10 h-10 opacity-20" />
+          </div>
+        </div>
+        <div className="text-center space-y-2">
+          <p className="text-xl font-bold text-white/50 tracking-tight">Agente en Espera</p>
+          <p className="text-sm max-w-[200px] mx-auto opacity-50">Sube un documento para iniciar el análisis inteligente.</p>
+        </div>
       </div>
     );
   }
 
-  const suggestions = [
+  const defaultSuggestions = suggestions.length > 0 ? suggestions : [
     "¿De qué trata este documento?",
     "Resumen de los puntos clave",
     "¿Cuáles son las conclusiones?",
@@ -52,48 +61,52 @@ export function ChatInterface({ messages, onSendMessage, onResetChat, isThinking
 
   if (!disabled && messages.length === 0) {
     return (
-      <div className="flex flex-col h-full relative">
-        <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-white/5 bg-black/20 backdrop-blur-md">
+      <div className="flex flex-col h-full relative bg-[#09090b]/40">
+        <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-white/5 bg-black/40 backdrop-blur-md">
            <div className="flex items-center gap-2">
-             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-             <span className="text-xs font-medium text-white/70">Sesión Activa</span>
+             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+             <span className="text-xs font-semibold text-white/50 uppercase tracking-widest">Sesión Activa</span>
           </div>
           <button 
             onClick={onResetChat}
             title="Reiniciar Sesión de Chat"
-            className="p-2 hover:bg-white/10 rounded-lg text-muted-foreground hover:text-red-400 transition-colors"
+            className="p-2 hover:bg-red-500/10 rounded-lg text-muted-foreground hover:text-red-400 transition-all duration-300"
           >
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-start md:justify-center p-4 md:p-8 gap-4 md:gap-8 overflow-y-auto custom-scrollbar">
-           <div className="text-center space-y-2 mt-4 md:mt-0">
-             <div className="w-12 h-12 md:w-16 md:h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-primary/20">
-               <Sparkles className="w-6 h-6 md:w-8 md:h-8 text-primary" />
+        <div className="flex-1 flex flex-col items-center justify-start p-4 md:p-8 overflow-y-auto custom-scrollbar min-h-0">
+           {/* Compact container for empty state */}
+           <div className="flex-1 flex flex-col items-center justify-center w-full py-4 md:py-6 space-y-6 md:space-y-8">
+             <div className="text-center space-y-3 w-full max-w-md mx-auto">
+               <div className="w-12 h-12 md:w-16 md:h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-indigo-500/20 shadow-xl shadow-indigo-500/5 transition-transform hover:scale-105 duration-500 shrink-0">
+                 <Sparkles className="w-6 h-6 md:w-8 md:h-8 text-indigo-400" />
+               </div>
+               <div className="space-y-2">
+                 <h3 className="text-xl md:text-2xl font-bold text-white tracking-tight">¿En qué puedo ayudarte?</h3>
+                 <p className="text-muted-foreground text-xs md:text-sm max-w-[280px] md:max-w-sm mx-auto leading-relaxed opacity-60">
+                   El documento está listo. Selecciona una pregunta o escribe la tuya.
+                 </p>
+               </div>
              </div>
-             <h3 className="text-lg md:text-xl font-semibold text-white">¿En qué puedo ayudarte hoy?</h3>
-             <p className="text-muted-foreground text-xs md:text-sm max-w-xs md:max-w-sm mx-auto">
-               El documento está procesado y listo. Puedes hacer una pregunta específica o elegir una de abajo.
-             </p>
-           </div>
 
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 w-full max-w-2xl pb-4">
-              {suggestions.map((question, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => onSendMessage(question)}
-                  className="p-3 md:p-4 bg-secondary/30 hover:bg-secondary/60 border border-white/5 hover:border-primary/30 rounded-xl text-left transition-all group"
-                >
-                  <span className="text-sm font-medium text-zinc-300 group-hover:text-white block mb-1">{question}</span>
-                  <span className="text-xs text-muted-foreground group-hover:text-primary/80">Click para preguntar</span>
-                </button>
-              ))}
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 w-full max-w-xl">
+                {defaultSuggestions.map((question, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => onSendMessage(question)}
+                    className="p-3 md:p-4 bg-white/[0.03] hover:bg-indigo-500/10 border border-white/5 hover:border-indigo-500/20 rounded-xl text-left transition-all duration-300 group"
+                  >
+                    <span className="text-xs md:text-sm font-medium text-zinc-300 group-hover:text-white block mb-0.5">{question}</span>
+                    <span className="text-[9px] text-zinc-500 uppercase tracking-wider group-hover:text-indigo-400">Click para preguntar</span>
+                  </button>
+                ))}
+             </div>
            </div>
         </div>
 
-        <div className="p-3 md:p-4 border-t border-slate-800/50 bg-background/80 backdrop-blur-md">
-         {/* Input form remains same */}
+        <div className="p-3 md:p-6 border-t border-white/5 bg-black/40 backdrop-blur-md">
          <form onSubmit={handleSubmit} className="relative max-w-3xl mx-auto w-full">
            <input
              type="text"
@@ -101,12 +114,12 @@ export function ChatInterface({ messages, onSendMessage, onResetChat, isThinking
              onChange={(e) => setInput(e.target.value)}
              disabled={disabled || isThinking}
              placeholder="Envía un mensaje al agente..."
-             className="w-full bg-secondary/50 border border-slate-700/50 text-foreground rounded-xl py-3 md:py-4 pl-4 md:pl-5 pr-12 md:pr-14 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/50 text-sm md:text-base"
+             className="w-full bg-white/[0.03] border border-white/10 text-white rounded-2xl py-3 md:py-5 pl-4 md:pl-6 pr-14 md:pr-16 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-zinc-600 text-sm md:text-base"
            />
            <button
              type="submit"
              disabled={!input.trim() || disabled || isThinking}
-             className="absolute right-1.5 top-1.5 bottom-1.5 p-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:bg-transparent disabled:text-muted-foreground transition-all"
+             className="absolute right-2 top-2 bottom-2 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-20 disabled:grayscale transition-all shadow-lg shadow-indigo-600/20"
            >
              <Send className="w-4 h-4 md:w-5 h-5" />
            </button>
@@ -133,7 +146,7 @@ export function ChatInterface({ messages, onSendMessage, onResetChat, isThinking
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar pb-20">
         {messages.map((msg, idx) => (
           <motion.div
             key={idx}

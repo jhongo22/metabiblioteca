@@ -9,9 +9,16 @@ type Message = {
 type PDFStatus = 'idle' | 'uploading' | 'processing' | 'ready' | 'error';
 
 interface ActiveFile {
+  id: number;
   filename: string;
   file_url: string;
   processed_at: string;
+}
+
+// Memory structure to hold multiple conversations
+interface ConversationState {
+  messages: Message[];
+  conversationId: string;
 }
 
 interface UseChatReturn {
@@ -20,8 +27,11 @@ interface UseChatReturn {
   loadingStep: string;
   isThinking: boolean;
   activeFile: ActiveFile | null;
+  files: ActiveFile[];
+  suggestedQuestions: string[];
   uploadPDF: (url: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
+  setActiveFileById: (id: number) => void;
   resetChat: () => void;
 }
 
@@ -31,45 +41,51 @@ export function useChat(): UseChatReturn {
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [isThinking, setIsThinking] = useState(false);
   const [activeFile, setActiveFile] = useState<ActiveFile | null>(null);
+  const [files, setFiles] = useState<ActiveFile[]>([]);
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
+  
+  // This map stores the state for each document: { [docId]: { messages, conversationId } }
+  const [conversations, setConversations] = useState<Record<number, ConversationState>>({});
   const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
 
   const UPLOAD_WEBHOOK = 'https://n8n-prueba3.metadatos.org/webhook/e473eba2-30bf-4f2a-afc5-d3cd1d1a028c';
   const CHAT_WEBHOOK = 'https://n8n-prueba3.metadatos.org/webhook/26163646-5372-4ca2-bc83-3648a6e0eaa8';
 
+  const fetchFiles = async () => {
+    const { data, error } = await supabase
+      .from('active_session_files')
+      .select('*')
+      .order('processed_at', { ascending: false });
+    
+    if (data && !error) {
+      setFiles(data);
+    }
+    return data;
+  };
+
   // 1. Initial Fetch & Realtime Subscription
   useEffect(() => {
-    const fetchActiveFile = async () => {
-      const { data, error } = await supabase
-        .from('active_session_files')
-        .select('*')
-        .eq('id', 1)
-        .single();
-      
-      if (data && !error) {
-        setActiveFile(data);
+    fetchFiles().then(data => {
+      if (data && data.length > 0 && !activeFile) {
+        setActiveFile(data[0]);
         setPdfStatus('ready');
       }
-    };
-
-    fetchActiveFile();
+    });
 
     const channel = supabase
-      .channel('active_session_files_changes')
+      .channel('schema-db-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'active_session_files' },
         (payload) => {
-          console.log('Change received!', payload);
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            setActiveFile(payload.new as ActiveFile);
-            setPdfStatus('ready');
-            // If a new file is loaded externally, specifically clear chat for new context
-            // Optionally check if filename changed to avoid clearing on minor updates
-            setMessages([]); 
-          } else if (payload.eventType === 'DELETE') {
-            setActiveFile(null);
-            setPdfStatus('idle');
-            setMessages([]);
+          fetchFiles();
+          if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any).id;
+            if (activeFile?.id === deletedId) {
+              setActiveFile(null);
+              setPdfStatus('idle');
+              setMessages([]);
+            }
           }
         }
       )
@@ -78,9 +94,21 @@ export function useChat(): UseChatReturn {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [activeFile?.id]);
 
-  // Simulates RAG steps for better UX
+  // Update effect to save current chat state into the conversations map whenever messages change
+  useEffect(() => {
+    if (activeFile) {
+      setConversations(prev => ({
+        ...prev,
+        [activeFile.id]: {
+          messages,
+          conversationId
+        }
+      }));
+    }
+  }, [messages, conversationId, activeFile?.id]);
+
   const simulateLoadingSteps = () => {
     const steps = [
       "Analizando estructura del documento...",
@@ -100,10 +128,9 @@ export function useChat(): UseChatReturn {
 
   const uploadPDF = async (url: string) => {
     try {
-      // Clear previous context before starting new upload
+      const newConvId = crypto.randomUUID();
       setMessages([]);
-      setConversationId(crypto.randomUUID());
-      
+      setConversationId(newConvId);
       setPdfStatus('processing'); 
       const stepInterval = simulateLoadingSteps();
       
@@ -115,22 +142,24 @@ export function useChat(): UseChatReturn {
 
       clearInterval(stepInterval);
 
-      if (!response.ok) {
-        throw new Error('Failed to upload PDF');
-      }
+      if (!response.ok) throw new Error('Failed to upload PDF');
 
       const data = await response.json();
       
       if (data.status === 'success') {
-        // 1. Fetch the latest file record directly from Supabase
-        const { data: fileData, error: fileError } = await supabase
-          .from('active_session_files')
-          .select('*')
-          .eq('id', 1)
-          .single();
+        const freshFiles = await fetchFiles();
+        if (freshFiles && freshFiles.length > 0) {
+          const latestFile = freshFiles[0];
+          setActiveFile(latestFile);
+          // Initialize memory for this new file
+          setConversations(prev => ({
+            ...prev,
+            [latestFile.id]: { messages: [], conversationId: newConvId }
+          }));
+        }
         
-        if (fileData && !fileError) {
-          setActiveFile(fileData);
+        if (data.suggestions && Array.isArray(data.suggestions)) {
+          setSuggestedQuestions(data.suggestions);
         }
         
         setPdfStatus('ready');
@@ -140,12 +169,11 @@ export function useChat(): UseChatReturn {
     } catch (error) {
       console.error('Upload Error:', error);
       setPdfStatus('error');
-      setTimeout(() => setPdfStatus('idle'), 8000); // Increased to 8s for visibility
+      setTimeout(() => setPdfStatus('idle'), 8000);
     }
   };
 
   const sendMessage = async (content: string) => {
-    // Add user message
     const userMessage: Message = { role: 'user', content };
     setMessages((prev) => [...prev, userMessage]);
     setIsThinking(true);
@@ -155,6 +183,7 @@ export function useChat(): UseChatReturn {
         conversationId,
         messageId: crypto.randomUUID(),
         message: content,
+        filename: activeFile?.filename,
         createdAt: new Date().toISOString()
       };
 
@@ -164,15 +193,10 @@ export function useChat(): UseChatReturn {
         body: JSON.stringify(payload), 
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to send message');
-      }
+      if (!response.ok) throw new Error('Failed to send message');
 
       const data = await response.json();
-      
-      // Handle n8n response format: [ { output: "..." } ] or { output: "..." } or simple string
       let botContent = "Lo siento, no pude procesar la respuesta.";
-      
       const responseData = Array.isArray(data) ? data[0] : data;
       
       if (typeof responseData === 'string') {
@@ -191,11 +215,34 @@ export function useChat(): UseChatReturn {
     }
   };
 
+  const setActiveFileById = (id: number) => {
+    const file = files.find(f => f.id === id);
+    if (file) {
+      setActiveFile(file);
+      setPdfStatus('ready');
+      
+      // RESTORE or INITIALIZE state for this specific file
+      const savedState = conversations[id];
+      if (savedState) {
+        setMessages(savedState.messages);
+        setConversationId(savedState.conversationId);
+      } else {
+        setMessages([]);
+        setConversationId(crypto.randomUUID());
+      }
+    }
+  };
+
   const resetChat = () => {
     setMessages([]);
-    setConversationId(crypto.randomUUID());
-    // Note: We do NOT reset pdfStatus or activeFile here.
-    // The user just wants to clear the chat history/context, not the document.
+    const newConvId = crypto.randomUUID();
+    setConversationId(newConvId);
+    if (activeFile) {
+        setConversations(prev => ({
+            ...prev,
+            [activeFile.id]: { messages: [], conversationId: newConvId }
+        }));
+    }
   };
 
   return {
@@ -204,8 +251,11 @@ export function useChat(): UseChatReturn {
     loadingStep,
     isThinking,
     activeFile,
+    files,
+    suggestedQuestions,
     uploadPDF,
     sendMessage,
+    setActiveFileById,
     resetChat
   };
 }

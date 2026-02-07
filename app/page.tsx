@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/Sidebar';
 import { PDFUploader } from '@/components/PDFUploader';
+import { PDFViewer } from '@/components/PDFViewer';
 import { ChatInterface } from '@/components/ChatInterface';
 import { useChat } from '@/hooks/useChat';
 import { cn } from '@/lib/utils';
@@ -10,7 +11,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
 
 export default function Home() {
-  const { messages, pdfStatus, loadingStep, isThinking, uploadPDF, sendMessage, activeFile, resetChat } = useChat();
+  const { 
+    messages, pdfStatus, loadingStep, isThinking, uploadPDF, sendMessage, 
+    activeFile, files, setActiveFileById, resetChat, suggestedQuestions 
+  } = useChat();
   const [activeTab, setActiveTab] = useState<'upload' | 'chat'>('upload');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -50,8 +54,10 @@ export default function Home() {
           setActiveTab(tab);
           setIsMobileMenuOpen(false); // Close menu on tab change
         }}
-        chatDisabled={pdfStatus !== 'ready'}
+        chatDisabled={files.length === 0}
         activeFile={activeFile}
+        files={files}
+        onSelectFile={setActiveFileById}
       />
 
       {/* Mobile Overlay */}
@@ -72,7 +78,10 @@ export default function Home() {
         {/* Background Gradients/Effects */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-background to-background pointer-events-none" />
         
-        <div className="relative z-10 flex-1 flex flex-col max-w-5xl mx-auto w-full p-3 md:p-6 min-h-0">
+        <div className={cn(
+          "relative z-10 flex-1 flex flex-col mx-auto w-full p-3 md:p-6 min-h-0 transition-all duration-500",
+          activeTab === 'chat' && activeFile ? "max-w-full" : "max-w-5xl"
+        )}>
           
           <AnimatePresence mode="wait">
             {activeTab === 'upload' ? (
@@ -99,19 +108,34 @@ export default function Home() {
             ) : (
               <motion.div 
                 key="chat"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.3 }}
-                className="flex-1 min-h-0 bg-background/40 backdrop-blur-sm rounded-2xl border border-white/5 overflow-hidden shadow-2xl"
+                className="flex-1 min-h-0 flex flex-col md:flex-row gap-4 md:gap-6"
               >
-                <ChatInterface 
-                  messages={messages}
-                  onSendMessage={sendMessage}
-                  onResetChat={resetChat}
-                  isThinking={isThinking}
-                  disabled={pdfStatus !== 'ready'}
-                />
+                {/* Chat Interface Side - Left (More dominant now) */}
+                <div className="flex-[1.8] h-full min-h-0 bg-background/40 backdrop-blur-sm rounded-2xl border border-white/5 overflow-hidden shadow-2xl flex flex-col">
+                  <ChatInterface 
+                    messages={messages}
+                    onSendMessage={sendMessage}
+                    onResetChat={resetChat}
+                    isThinking={isThinking}
+                    disabled={pdfStatus !== 'ready'}
+                    suggestions={suggestedQuestions}
+                  />
+                </div>
+
+                {/* PDF Viewer Side - Right (Smaller and secondary) */}
+                <div className="hidden lg:block flex-1 h-full min-h-0">
+                  {activeFile ? (
+                    <PDFViewer url={activeFile.file_url} filename={activeFile.filename} />
+                  ) : (
+                    <div className="h-full bg-background/40 backdrop-blur-sm rounded-2xl border border-white/5 flex items-center justify-center">
+                       <p className="text-muted-foreground italic">No hay archivo activo</p>
+                    </div>
+                  )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

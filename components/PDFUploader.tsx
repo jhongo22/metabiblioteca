@@ -76,7 +76,7 @@ export function PDFUploader({ onUpload, status, loadingStep, activeFileName }: P
                 : "bg-primary text-primary-foreground hover:opacity-90 active:scale-95"
             )}
           >
-            {status === 'ready' ? 'Reemplazar' : (status === 'uploading' || status === 'processing' ? 'Procesando' : 'Ingestar')}
+            {status === 'ready' ? 'Subir' : (status === 'uploading' || status === 'processing' ? 'Procesando' : 'Ingestar')}
           </button>
         </form>
 
@@ -109,7 +109,7 @@ export function PDFUploader({ onUpload, status, loadingStep, activeFileName }: P
                       </div>
                       {activeFileName && (
                         <span className="text-xs text-green-400/70 ml-7 italic truncate max-w-[300px]">
-                           Archivo: {activeFileName}
+                          Archivo: {activeFileName}
                         </span>
                       )}
                     </div>
